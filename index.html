@@ -1,0 +1,119 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Star Catcher Deluxe</title>
+<style>
+  body{margin:0;background:#0b0b1a;color:#fff;font-family:sans-serif;text-align:center;overflow:hidden}
+  canvas{background:#14143a;max-width:100vw;max-height:100vh;touch-action:none}
+</style>
+</head>
+<body>
+<canvas id="g" width="480" height="640"></canvas>
+<script>
+const c=document.getElementById('g'),ctx=c.getContext('2d');
+let state='title',p,items,parts,score,lives,level,combo,shake,slow,shield,best=0;
+try{best=+localStorage.getItem('best')||0}catch(e){}
+
+const AC=new (window.AudioContext||window.webkitAudioContext)();
+function beep(f,d,t='sine'){try{
+  const o=AC.createOscillator(),g=AC.createGain();
+  o.type=t;o.frequency.value=f;g.gain.value=0.08;
+  o.connect(g);g.connect(AC.destination);o.start();
+  g.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+d);o.stop(AC.currentTime+d);
+}catch(e){}}
+
+function start(){
+  p={x:200,y:590,w:80,h:14};items=[];parts=[];
+  score=0;lives=3;level=1;combo=1;shake=0;slow=0;shield=0;state='play';
+}
+function burst(x,y,col,n=14){
+  for(let i=0;i<n;i++)parts.push({x,y,vx:(Math.random()-.5)*6,vy:(Math.random()-.5)*6,l:30,col});
+}
+function move(x){const r=c.getBoundingClientRect();p.x=(x-r.left)*(c.width/r.width)-p.w/2}
+addEventListener('mousemove',e=>move(e.clientX));
+addEventListener('touchmove',e=>move(e.touches[0].clientX),{passive:true});
+addEventListener('keydown',e=>{
+  if(e.key==='ArrowLeft')p.x-=30;
+  if(e.key==='ArrowRight')p.x+=30;
+  if(e.key===' ')act();
+});
+c.addEventListener('pointerdown',act);
+function act(){AC.resume();if(state!=='play')start()}
+
+function spawn(){
+  const r=Math.random();
+  const type=r<0.2?'bomb':r<0.26?'shield':r<0.32?'slow':'star';
+  items.push({x:Math.random()*440+20,y:-10,type});
+}
+function gameOver(){
+  state='over';
+  if(score>best){best=score;try{localStorage.setItem('best',best)}catch(e){}}
+}
+function update(){
+  p.x=Math.max(0,Math.min(c.width-p.w,p.x));
+  const spd=(2.5+level*0.5)*(slow>0?0.4:1);
+  if(Math.random()<0.025+level*0.006)spawn();
+  items.forEach(s=>s.y+=spd);
+  items=items.filter(s=>{
+    const hit=s.y>p.y-8&&s.y<p.y+p.h&&s.x>p.x&&s.x<p.x+p.w;
+    if(hit){
+      if(s.type==='star'){
+        score+=10*combo;combo=Math.min(combo+1,8);
+        beep(520+combo*60,.15);burst(s.x,s.y,'#ffd54f');
+        if(score>=level*150){level++;beep(880,.4,'square')}
+      }else if(s.type==='bomb'){
+        if(shield>0){shield=0;beep(300,.2)}
+        else{lives--;combo=1;shake=15;beep(110,.4,'sawtooth');burst(s.x,s.y,'#ef5350',24);if(lives<=0)gameOver()}
+      }else if(s.type==='shield'){shield=1;beep(700,.2,'triangle')}
+      else{slow=300;beep(400,.2,'triangle')}
+      return false;
+    }
+    if(s.y>c.height){if(s.type==='star')combo=1;return false}
+    return true;
+  });
+  parts.forEach(q=>{q.x+=q.vx;q.y+=q.vy;q.l--});
+  parts=parts.filter(q=>q.l>0);
+  if(slow>0)slow--;
+  if(shake>0)shake--;
+}
+
+const COL={star:'#ffd54f',bomb:'#ef5350',shield:'#4fc3f7',slow:'#ba68c8'};
+function text(t,x,y,s=24,a='center',col='#fff'){ctx.fillStyle=col;ctx.font=s+'px sans-serif';ctx.textAlign=a;ctx.fillText(t,x,y)}
+function veil(){ctx.fillStyle='rgba(0,0,0,.6)';ctx.fillRect(0,0,c.width,c.height)}
+function draw(){
+  ctx.save();
+  if(shake>0)ctx.translate((Math.random()-.5)*shake,(Math.random()-.5)*shake);
+  ctx.clearRect(-20,-20,c.width+40,c.height+40);
+  ctx.fillStyle=shield?'#81d4fa':'#4fc3f7';ctx.fillRect(p.x,p.y,p.w,p.h);
+  if(shield){ctx.strokeStyle='#81d4fa';ctx.lineWidth=3;ctx.strokeRect(p.x-5,p.y-5,p.w+10,p.h+10)}
+  items.forEach(s=>{ctx.fillStyle=COL[s.type];ctx.beginPath();ctx.arc(s.x,s.y,s.type==='star'?10:12,0,7);ctx.fill()});
+  parts.forEach(q=>{ctx.globalAlpha=q.l/30;ctx.fillStyle=q.col;ctx.fillRect(q.x,q.y,4,4)});
+  ctx.globalAlpha=1;
+  text('Score '+score,15,35,22,'left');
+  text('Level '+level,c.width/2,35,22);
+  text('Lives '+lives,c.width-15,35,22,'right');
+  if(combo>1)text('x'+combo+' combo',c.width/2,65,18,'center','#ffd54f');
+  if(slow>0)text('slow-mo',c.width/2,90,16,'center','#ba68c8');
+  ctx.restore();
+  if(state==='title'){
+    veil();
+    text('STAR CATCHER',c.width/2,250,44);
+    text('Catch yellow stars, dodge red bombs',c.width/2,300,18);
+    text('Blue = shield    Purple = slow-mo',c.width/2,330,16);
+    text('Click or press Space to start',c.width/2,400,22,'center','#ffd54f');
+    text('Best '+best,c.width/2,450,18);
+  }
+  if(state==='over'){
+    veil();
+    text('GAME OVER',c.width/2,270,44,'center','#ef5350');
+    text('Score '+score+'    Best '+best,c.width/2,320,22);
+    text('Click or press Space to retry',c.width/2,390,20,'center','#ffd54f');
+  }
+}
+function loop(){if(state==='play')update();draw();requestAnimationFrame(loop)}
+start();state='title';loop();
+</script>
+</body>
+</html>
